@@ -8,19 +8,21 @@ export const COLORS = {
     MID: '#010105',
     NEAR: '#020208',
   },
-  // High-End Multi-tonal Stardust (Mix of 3-4 tones)
+  // Refined cosmic palette: High-end cinematic colors
   STARDUST: {
-    CYAN_WHITE: '#e0f7ff',
-    PALE_PURPLE: '#d8d0ff',
-    DEEP_BLUE: '#3a5da1',
-    STEEL: '#6b7c96'
+    CYAN_WHITE: '#e0f7fa',
+    GOLD: '#ffd54f',
+    LAVENDER: '#ce93d8',
+    CORAL: '#ff8a65',
+    DEEP_BLUE: '#0d1b2a',
+    STEEL: '#90a4ae'
   },
   SENTIMENT: {
-    HAPPY: '#f0f4ff',
-    CALM: '#d1e3ff',
-    ANXIOUS: '#e8dfd1',
-    SAD: '#7188a1',
-    ANGRY: '#a17171',
+    HAPPY: '#FFD54F',   // Amber/Gold (Warm stars)
+    CALM: '#4DD0E1',    // Cyan (Nebula gas)
+    ANXIOUS: '#CE93D8', // Lavender (High energy)
+    SAD: '#78909C',     // Steel Blue (Cold distance)
+    ANGRY: '#FF7043',   // Coral/Orange (Hot stars)
   },
   UI: {
     PRIMARY: '#4a9eff',

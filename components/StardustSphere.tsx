@@ -2,23 +2,27 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE_LIB from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { Fragment, FragmentType } from '../types';
+import { Fragment, FragmentType, Sentiment } from '../types';
 import { COLORS } from '../constants';
 
 const THREE = THREE_LIB;
 
 interface StardustSphereProps {
   fragments: Fragment[];
-  onSelectFragment: (f: Fragment) => void;
+  onSelectFragment: (f: Fragment | null) => void;
   selectedFragment?: Fragment | null;
 }
 
 const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFragment, selectedFragment }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const rendererRef = useRef<THREE_LIB.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE_LIB.PerspectiveCamera | null>(null);
   const pointsRef = useRef<THREE_LIB.Points | null>(null);
   const lineRef = useRef<THREE_LIB.LineSegments | null>(null);
-  const nebulaRef = useRef<THREE_LIB.Group | null>(null);
+  const nebulaLayersRef = useRef<THREE_LIB.Group[]>([]);
   const coreRef = useRef<THREE_LIB.Group | null>(null);
+  const diskRef = useRef<THREE_LIB.Mesh | null>(null);
+  const frameIdRef = useRef<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const resonantIndices = useMemo(() => {
@@ -30,18 +34,21 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
         return isResonant ? i : -1;
       })
       .filter(i => i !== -1)
-      .slice(0, 20);
+      .slice(0, 15);
   }, [selectedFragment, fragments]);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
+    nebulaLayersRef.current = [];
+    
     const width = mountRef.current.clientWidth;
     const height = mountRef.current.clientHeight;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, width / height, 1, 5000);
+    const camera = new THREE.PerspectiveCamera(40, width / height, 1, 10000);
     camera.position.set(0, 0, 1600);
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ 
       antialias: true, 
@@ -51,56 +58,62 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mountRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
-    // --- 1. 进化版引力核心 (The Celestial Core) ---
     const coreGroup = new THREE.Group();
     
-    // 核心等离子球体
-    const coreInternalMat = new THREE.ShaderMaterial({
+    // --- 1. Enhanced "Living Star" Core ---
+    const coreMat = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        colorA: { value: new THREE.Color(COLORS.STARDUST.DEEP_BLUE) },
-        colorB: { value: new THREE.Color(COLORS.STARDUST.CYAN_WHITE) }
+        colorA: { value: new THREE.Color('#020617') },
+        colorB: { value: new THREE.Color('#1e3a8a') },
+        colorC: { value: new THREE.Color(COLORS.STARDUST.CYAN_WHITE) }
       },
       vertexShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
+        varying vec3 vViewPosition;
+        uniform float time;
         void main() {
           vUv = uv;
+          float pulse = 1.0 + 0.02 * sin(time * 0.8);
+          vec3 pos = position * pulse;
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vViewPosition = -mvPosition.xyz;
+          gl_Position = projectionMatrix * mvPosition;
         }
       `,
       fragmentShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
+        varying vec3 vViewPosition;
         uniform float time;
         uniform vec3 colorA;
         uniform vec3 colorB;
-
-        float noise(vec2 p) {
-          return sin(p.x * 10.0 + time) * sin(p.y * 10.0 - time);
-        }
-
+        uniform vec3 colorC;
         void main() {
-          float fresnel = pow(1.0 - dot(vNormal, vec3(0,0,1)), 3.0);
-          float n = noise(vUv * 2.0);
-          vec3 baseColor = mix(colorA, colorB, vUv.y + n * 0.2);
-          float alpha = fresnel * 0.8 + 0.2;
-          gl_FragColor = vec4(baseColor * (1.0 + fresnel * 2.0), alpha);
+          vec3 normal = normalize(vNormal);
+          float fresnel = pow(1.0 - dot(normal, vec3(0,0,1)), 3.0);
+          float noise = sin(vUv.x * 20.0 + time * 0.5) * cos(vUv.y * 15.0 - time * 0.3);
+          vec3 plasma = mix(colorA, colorB, 0.5 + 0.4 * noise);
+          vec3 finalColor = mix(plasma, colorC, fresnel * 0.8);
+          gl_FragColor = vec4(finalColor, 0.98);
         }
       `,
       transparent: true,
-      blending: THREE.AdditiveBlending
     });
 
-    const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(60, 64, 64), coreInternalMat);
+    const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(70, 64, 64), coreMat);
     coreGroup.add(coreMesh);
 
-    // 引力光环 (Accretion Disk)
-    const ringGeo = new THREE.RingGeometry(90, 140, 128);
-    const ringMat = new THREE.ShaderMaterial({
-      uniforms: { time: { value: 0 } },
+    // --- 2. Dust Accretion Disk ---
+    const diskMat = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        color: { value: new THREE.Color(COLORS.STARDUST.CYAN_WHITE) }
+      },
       vertexShader: `
         varying vec2 vUv;
         void main() {
@@ -111,151 +124,106 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
       fragmentShader: `
         varying vec2 vUv;
         uniform float time;
+        uniform vec3 color;
         void main() {
           float dist = length(vUv - 0.5);
-          float alpha = smoothstep(0.5, 0.45, dist) * smoothstep(0.2, 0.3, dist);
-          float grain = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
-          alpha *= (0.3 + 0.2 * sin(vUv.x * 50.0 + time)) * grain;
-          gl_FragColor = vec4(1.0, 1.0, 1.0, alpha * 0.5);
+          float disc = smoothstep(0.5, 0.35, dist) * smoothstep(0.18, 0.25, dist);
+          float angle = atan(vUv.y - 0.5, vUv.x - 0.5);
+          float spiral = sin(angle * 3.0 - time * 1.5 + dist * 50.0);
+          float alpha = disc * (0.15 + 0.08 * spiral);
+          gl_FragColor = vec4(color, alpha);
         }
       `,
       transparent: true,
       blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2.5;
-    coreGroup.add(ring);
-
-    // --- 调优后的 Halo (Deep Atmospheric Veil) ---
-    const haloMat = new THREE.ShaderMaterial({
-      uniforms: { time: { value: 0 } },
-      vertexShader: `
-        varying float vOpacity;
-        varying vec3 vNormal;
-        uniform float time;
-        
-        float hash(float n) { return fract(sin(n) * 43758.5453123); }
-        float noise(vec3 x) {
-          vec3 p = floor(x);
-          vec3 f = fract(x);
-          f = f*f*(3.0-2.0*f);
-          float n = p.x + p.y*57.0 + 113.0*p.z;
-          return mix(mix(mix( hash(n+  0.0), hash(n+  1.0),f.x),
-                         mix( hash(n+ 57.0), hash(n+ 58.0),f.x),f.y),
-                     mix(mix( hash(n+113.0), hash(n+114.0),f.x),
-                         mix( hash(n+170.0), hash(n+171.0),f.x),f.y),f.z);
-        }
-
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          
-          // 减小扰动幅度 (15.0 -> 8.0)，让波动更丝滑
-          float n = noise(position * 0.04 + time * 0.15);
-          vec3 pos = position + normal * n * 8.0; 
-          
-          // 增加 pow 指数 (2.5 -> 3.0)，让光晕更向外围收缩，核心区域更干净
-          vOpacity = pow(1.0 - dot(vNormal, vec3(0,0,1)), 3.0);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying float vOpacity;
-        varying vec3 vNormal;
-        uniform float time;
-        void main() {
-          // 变慢呼吸频率 (0.6 -> 0.3)，让动态更优雅
-          float pulse = pow(0.5 + 0.5 * sin(time * 0.3), 3.0);
-          
-          // 调暗颜色：主要保留深蓝和墨色，极大幅度压低亮白权重 (0.4 -> 0.15)
-          vec3 glowColor = mix(vec3(0.02, 0.08, 0.15), vec3(0.1, 0.25, 0.4), vOpacity * 0.15);
-          
-          // 极大幅度降低透明度上限 (0.12 -> 0.05)，使其呈现为“若有若无”的薄纱
-          float finalAlpha = vOpacity * (0.02 + 0.05 * pulse);
-          
-          gl_FragColor = vec4(glowColor, finalAlpha);
-        }
-      `,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
+      side: THREE.DoubleSide,
       depthWrite: false
     });
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(180, 64, 64), haloMat);
-    coreGroup.add(halo);
+
+    const disk = new THREE.Mesh(new THREE.PlaneGeometry(380, 380), diskMat);
+    disk.rotation.x = Math.PI / 2.1;
+    coreGroup.add(disk);
+    diskRef.current = disk;
 
     scene.add(coreGroup);
     coreRef.current = coreGroup;
 
-    // --- 2. 星云图层 ---
-    const nebulaGroup = new THREE.Group();
-    const nebulaCount = 5;
-    for (let i = 0; i < nebulaCount; i++) {
-      const nebulaMat = new THREE.ShaderMaterial({
-        uniforms: {
-          time: { value: 0 },
-          color: { value: new THREE.Color(Object.values(COLORS.SENTIMENT)[i % 5]) },
-          opacity: { value: 0.025 } // 微调降低星云亮度
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform float time;
-          uniform vec3 color;
-          uniform float opacity;
-          void main() {
-            float dist = length(vUv - 0.5);
-            float alpha = smoothstep(0.5, 0.0, dist) * opacity;
-            alpha *= (0.6 + 0.4 * sin(time * 0.08 + vUv.x * 6.0 + vUv.y * 3.0));
-            gl_FragColor = vec4(color, alpha);
-          }
-        `,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide
-      });
-      const cloud = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), nebulaMat);
-      const angle1 = Math.random() * Math.PI * 2;
-      const angle2 = Math.random() * Math.PI;
-      const r = 250 + Math.random() * 200;
-      cloud.position.set(r * Math.sin(angle2) * Math.cos(angle1), r * Math.sin(angle2) * Math.sin(angle1), r * Math.cos(angle2));
-      cloud.lookAt(0, 0, 0);
-      nebulaGroup.add(cloud);
-    }
-    scene.add(nebulaGroup);
-    nebulaRef.current = nebulaGroup;
+    // --- 3. Subdued Nebulas ---
+    const nebulaConfigs = [
+      { color: '#020617', speed: 0.0003, opacity: 0.02, radius: 550 },
+      { color: '#0f172a', speed: -0.0002, opacity: 0.015, radius: 800 }
+    ];
 
-    // --- 3. 粒子星辰 ---
-    const count = fragments.length;
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
-    const vTypes = new Float32Array(count); 
-
-    fragments.forEach((f, i) => {
-      positions[i*3] = f.position[0];
-      positions[i*3+1] = f.position[1];
-      positions[i*3+2] = f.position[2];
-      const c = new THREE.Color(f.isUser ? COLORS.SENTIMENT[f.sentiment] : COLORS.STARDUST.CYAN_WHITE);
-      colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
-      if (f.type === FragmentType.DUST) { sizes[i] = 4.0; vTypes[i] = 0.0; } 
-      else if (f.type === FragmentType.BOKEH) { sizes[i] = 160.0; vTypes[i] = 2.0; } 
-      else { sizes[i] = f.isUser ? 24.0 : 12.0; vTypes[i] = 1.0; }
+    nebulaConfigs.forEach(cfg => {
+      const group = new THREE.Group();
+      for (let i = 0; i < 12; i++) {
+        const mat = new THREE.ShaderMaterial({
+          uniforms: { time: { value: 0 }, color: { value: new THREE.Color(cfg.color) }, opacity: { value: cfg.opacity } },
+          vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+          fragmentShader: `
+            varying vec2 vUv; uniform float time; uniform vec3 color; uniform float opacity;
+            void main() {
+              float d = length(vUv - 0.5);
+              float alpha = smoothstep(0.5, 0.0, d) * opacity;
+              gl_FragColor = vec4(color, alpha);
+            }
+          `,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), mat);
+        const a1 = Math.random() * Math.PI * 2;
+        const a2 = Math.random() * Math.PI;
+        mesh.position.set(cfg.radius * Math.sin(a2) * Math.cos(a1), cfg.radius * Math.sin(a2) * Math.sin(a1), cfg.radius * Math.cos(a2));
+        mesh.lookAt(0, 0, 0);
+        group.add(mesh);
+      }
+      scene.add(group);
+      nebulaLayersRef.current.push(group);
     });
 
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    // --- 4. Enhanced Stardust Points ---
+    const count = fragments.length;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const highlights = new Float32Array(count);
+    const sTypes = new Float32Array(count);
+
+    const sentimentMap: Record<Sentiment, number> = {
+      [Sentiment.HAPPY]: 0,
+      [Sentiment.CALM]: 1,
+      [Sentiment.ANXIOUS]: 2,
+      [Sentiment.SAD]: 3,
+      [Sentiment.ANGRY]: 4,
+    };
+
+    fragments.forEach((f, i) => {
+      pos[i*3] = f.position[0];
+      pos[i*3+1] = f.position[1];
+      pos[i*3+2] = f.position[2];
+      
+      // RICH COLOR LOGIC: 
+      // Non-user fragments also get their sentiment color to create a rich, varied galaxy.
+      const baseColor = new THREE.Color(COLORS.SENTIMENT[f.sentiment]);
+      // Add subtle variation to each individual star for "richness"
+      const variation = (Math.random() - 0.5) * 0.15;
+      col[i*3] = Math.min(1.0, baseColor.r + variation);
+      col[i*3+1] = Math.min(1.0, baseColor.g + variation);
+      col[i*3+2] = Math.min(1.0, baseColor.b + variation);
+      
+      sizes[i] = f.type === FragmentType.BOKEH ? 110.0 : (f.isUser ? 38.0 : (10.0 + Math.random() * 8.0));
+      sTypes[i] = sentimentMap[f.sentiment];
+    });
+
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    geo.setAttribute('vType', new THREE.BufferAttribute(vTypes, 1));
-    geo.setAttribute('highlight', new THREE.BufferAttribute(new Float32Array(count), 1));
+    geo.setAttribute('highlight', new THREE.BufferAttribute(highlights, 1));
+    geo.setAttribute('sType', new THREE.BufferAttribute(sTypes, 1));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
@@ -264,41 +232,45 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
         uHoveredIndex: { value: -1.0 }
       },
       vertexShader: `
-        attribute float size;
-        attribute float vType;
-        attribute float highlight;
-        attribute vec3 color;
-        varying vec3 vColor;
-        varying float vAlpha;
-        varying float vHigh;
-        uniform float time;
-        uniform float uPixelRatio;
-        uniform float uHoveredIndex;
+        attribute float size; attribute float highlight; attribute vec3 color; attribute float sType;
+        varying vec3 vColor; varying float vAlpha; varying float vHigh; varying float vType;
+        uniform float time; uniform float uPixelRatio; uniform float uHoveredIndex;
         void main() {
-          vColor = color;
-          vHigh = highlight;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          float dist = length(mvPosition.xyz);
-          vAlpha = smoothstep(3000.0, 1600.0, dist) * smoothstep(20.0, 450.0, dist);
-          float finalSize = size;
-          if (highlight > 0.5) finalSize *= 2.2;
-          if (uHoveredIndex >= 0.0 && abs(float(gl_VertexID) - uHoveredIndex) < 0.1) finalSize *= 2.5;
-          gl_PointSize = finalSize * uPixelRatio * (2400.0 / -mvPosition.z);
-          gl_Position = projectionMatrix * mvPosition;
+          vColor = color; vHigh = highlight; vType = sType;
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          float d = length(mvPos.xyz);
+          vAlpha = smoothstep(4500.0, 1000.0, d) * smoothstep(50.0, 600.0, d);
+          float fSize = size;
+          
+          if (highlight > 0.5) fSize *= (1.6 + 0.3 * sin(time * 3.0));
+          if (uHoveredIndex >= 0.0 && abs(float(gl_VertexID) - uHoveredIndex) < 0.1) fSize *= 2.2;
+          
+          gl_PointSize = fSize * uPixelRatio * (1800.0 / -mvPos.z);
+          gl_Position = projectionMatrix * mvPos;
         }
       `,
       fragmentShader: `
-        varying vec3 vColor;
-        varying float vAlpha;
-        varying float vHigh;
+        varying vec3 vColor; varying float vAlpha; varying float vHigh; varying float vType;
         uniform float time;
         void main() {
           vec2 uv = gl_PointCoord - 0.5;
           float d = length(uv);
-          float strength = exp(-d * (vHigh > 0.5 ? 8.0 : 18.0));
-          if (strength < 0.01) discard;
-          float pulse = 0.85 + 0.15 * sin(time * 0.7 + vHigh * 5.0);
-          gl_FragColor = vec4(vColor * strength * pulse, vAlpha * strength);
+          
+          float p = 0.0;
+          if(vType < 0.5) p = 0.5 + 0.5 * sin(time * 1.5 + vType); // HAPPY: Slow Glow
+          else if(vType < 1.5) p = 0.8 + 0.1 * sin(time * 0.5); // CALM: Steady
+          else if(vType < 2.5) p = 0.5 + 0.5 * sin(time * 12.0); // ANXIOUS: Rapid shimmer
+          else if(vType < 3.5) p = 0.2 + 0.5 * abs(sin(time * 0.8)); // SAD: Fading light
+          else p = 0.5 + 0.5 * step(0.4, sin(time * 18.0)); // ANGRY: Aggressive strobe
+
+          float strength = exp(-d * (vHigh > 0.5 ? 6.0 : 12.0));
+          if (strength < 0.005) discard;
+          
+          vec3 finalCol = vColor * strength * (0.8 + 0.4 * p);
+          // Boost user fragments with more core intensity
+          if(vHigh > 0.5) finalCol *= 1.5;
+
+          gl_FragColor = vec4(finalCol, vAlpha * strength);
         }
       `,
       transparent: true,
@@ -310,12 +282,19 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
     scene.add(points);
     pointsRef.current = points;
 
-    // --- 4. 共鸣织网 ---
+    // --- 5. Resonance Lines ---
     const lineGeo = new THREE.BufferGeometry();
-    const lineMat = new THREE.LineBasicMaterial({
-      color: '#ffffff',
+    const lineMat = new THREE.ShaderMaterial({
+      uniforms: { time: { value: 0 }, color: { value: new THREE.Color('#ffffff') } },
+      vertexShader: `void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform vec3 color; uniform float time;
+        void main() {
+          float pulse = 0.3 + 0.7 * abs(sin(time * 2.0));
+          gl_FragColor = vec4(color, 0.12 * pulse);
+        }
+      `,
       transparent: true,
-      opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -325,9 +304,9 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.04;
+    controls.dampingFactor = 0.03;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.4;
+    controls.autoRotateSpeed = 0.05;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -352,32 +331,33 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
 
     const handleClick = () => {
       if (hoveredIndex !== null) onSelectFragment(fragments[hoveredIndex]);
-      else onSelectFragment(null as any);
+      else onSelectFragment(null);
     };
 
     renderer.domElement.addEventListener('mousemove', handleMouseMove);
     renderer.domElement.addEventListener('click', handleClick);
 
     const animate = (t: number) => {
-      requestAnimationFrame(animate);
+      frameIdRef.current = requestAnimationFrame(animate);
       const time = t * 0.001;
       mat.uniforms.time.value = time;
       
-      if (nebulaRef.current) {
-        nebulaRef.current.children.forEach((c: any, i) => {
-          c.material.uniforms.time.value = time;
-          c.rotation.z = time * 0.03 * (i % 2 === 0 ? 1 : -1);
+      nebulaLayersRef.current.forEach((layer, i) => {
+        layer.rotation.y += nebulaConfigs[i].speed;
+        layer.children.forEach((c: any) => {
+          if (c.material && c.material.uniforms) c.material.uniforms.time.value = time;
         });
-        nebulaRef.current.rotation.y = time * 0.015;
-      }
+      });
       
       if (coreRef.current) {
-        const c = coreRef.current;
-        c.rotation.y = -time * 0.2;
-        (c.children[0] as any).material.uniforms.time.value = time;
-        (c.children[1] as any).material.uniforms.time.value = time;
-        (c.children[2] as any).material.uniforms.time.value = time;
-        c.children[1].rotation.z = Math.sin(time * 0.2) * 0.1;
+        coreRef.current.rotation.y = time * 0.01;
+        coreRef.current.children.forEach((c: any) => {
+          if (c.material && c.material.uniforms) c.material.uniforms.time.value = time;
+        });
+      }
+
+      if(lineRef.current && lineRef.current.material instanceof THREE_LIB.ShaderMaterial) {
+        lineRef.current.material.uniforms.time.value = time;
       }
 
       controls.update();
@@ -386,15 +366,21 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
     animate(0);
 
     const handleResize = () => {
-      camera.aspect = mountRef.current!.clientWidth / mountRef.current!.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mountRef.current!.clientWidth, mountRef.current!.clientHeight);
+      if (!mountRef.current || !cameraRef.current || !rendererRef.current) return;
+      cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
+      cameraRef.current.updateProjectionMatrix();
+      rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
+      if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
       window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('click', handleClick);
       mountRef.current?.removeChild(renderer.domElement);
+      renderer.dispose();
+      scene.clear();
     };
   }, [fragments]);
 
@@ -403,22 +389,24 @@ const StardustSphere: React.FC<StardustSphereProps> = ({ fragments, onSelectFrag
     const hAttr = pointsRef.current.geometry.getAttribute('highlight') as THREE_LIB.BufferAttribute;
     const posAttr = pointsRef.current.geometry.getAttribute('position') as THREE_LIB.BufferAttribute;
     for (let i = 0; i < hAttr.count; i++) hAttr.setX(i, 0);
+
     if (selectedFragment) {
       const idx = fragments.findIndex(f => f.id === selectedFragment.id);
       if (idx !== -1) {
-        hAttr.setX(idx, 2.0);
+        hAttr.setX(idx, 1.0);
         const linePos = [];
         const sx = posAttr.getX(idx), sy = posAttr.getY(idx), sz = posAttr.getZ(idx);
         resonantIndices.forEach(ri => {
-          hAttr.setX(ri, 1.5);
+          hAttr.setX(ri, 0.6);
           linePos.push(sx, sy, sz, posAttr.getX(ri), posAttr.getY(ri), posAttr.getZ(ri));
         });
         lineRef.current.geometry.setAttribute('position', new THREE.Float32BufferAttribute(linePos, 3));
-        (lineRef.current.material as THREE_LIB.LineBasicMaterial).opacity = 0.5;
-        (lineRef.current.material as THREE_LIB.LineBasicMaterial).color.set(COLORS.SENTIMENT[selectedFragment.sentiment]);
+        if (lineRef.current.material instanceof THREE_LIB.ShaderMaterial) {
+          lineRef.current.material.uniforms.color.value.set(COLORS.SENTIMENT[selectedFragment.sentiment]);
+        }
       }
     } else {
-      (lineRef.current.material as THREE_LIB.LineBasicMaterial).opacity = 0;
+      lineRef.current.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
     }
     hAttr.needsUpdate = true;
   }, [selectedFragment, resonantIndices, fragments]);

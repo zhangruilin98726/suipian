@@ -15,33 +15,43 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   ];
 
   return (
-    <div className="fixed left-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-6 z-50 group">
-      {/* Floating Glass Dock */}
-      <div className="p-3 bg-white/[0.03] border border-white/10 backdrop-blur-2xl rounded-full flex flex-col gap-4 shadow-2xl transition-all duration-500 hover:bg-white/[0.05] hover:border-white/20">
+    <div className="fixed left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-10 z-50">
+      {/* Decorative vertical axis */}
+      <div className="absolute left-1/2 -top-20 -bottom-20 w-[1px] bg-gradient-to-b from-transparent via-white/10 to-transparent pointer-events-none" />
+      <div className="absolute -left-4 top-0 tech-font text-[6px] text-white/10 rotate-90 origin-left tracking-[1em] uppercase">Sector_09_Alpha</div>
+
+      {/* Main Glass Dock */}
+      <div className="relative p-2 bg-black/40 border border-white/5 backdrop-blur-3xl rounded-full flex flex-col gap-6 shadow-[0_0_40px_rgba(0,0,0,0.5)] transition-all duration-700 hover:border-white/20">
         {menuItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 relative group/btn ${
+            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 relative group/btn ${
               activeTab === item.id 
-                ? 'bg-white text-black scale-110' 
-                : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+                ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)]' 
+                : 'text-white/30 hover:text-white/80 hover:bg-white/5'
             }`}
           >
             <item.icon className="w-5 h-5" />
             
             {/* Tooltip */}
-            <div className="absolute left-16 px-3 py-1 bg-white/10 backdrop-blur-md border border-white/10 rounded-md opacity-0 group-hover/btn:opacity-100 translate-x-[-10px] group-hover/btn:translate-x-0 transition-all pointer-events-none whitespace-nowrap">
-              <span className="text-[10px] tracking-[0.2em] font-light uppercase text-white/80">{item.label}</span>
+            <div className="absolute left-20 px-4 py-2 bg-black/80 backdrop-blur-xl border border-white/10 rounded-lg opacity-0 group-hover/btn:opacity-100 translate-x-[-10px] group-hover/btn:translate-x-0 transition-all pointer-events-none whitespace-nowrap">
+              <span className="text-[9px] tracking-[0.3em] font-light uppercase text-white/90">{item.label}</span>
             </div>
+            
+            {/* Decorative dot for active state */}
+            {activeTab === item.id && (
+              <div className="absolute -right-1 w-1 h-1 bg-white rounded-full animate-ping" />
+            )}
           </button>
         ))}
       </div>
       
-      {/* User Avatar */}
-      <button className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-2xl flex items-center justify-center overflow-hidden hover:border-white/30 transition-all group/avatar">
-        <div className="w-1.5 h-1.5 bg-white/40 rounded-full group-hover/avatar:scale-150 transition-transform" />
-      </button>
+      {/* HUD Info bit */}
+      <div className="flex flex-col items-center gap-2 opacity-20">
+         <div className="w-1 h-1 bg-white rounded-full" />
+         <div className="w-[1px] h-8 bg-white" />
+      </div>
     </div>
   );
 };
