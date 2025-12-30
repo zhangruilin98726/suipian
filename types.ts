@@ -4,7 +4,9 @@ export enum Sentiment {
   CALM = 'CALM',
   ANXIOUS = 'ANXIOUS',
   SAD = 'SAD',
-  ANGRY = 'ANGRY'
+  ANGRY = 'ANGRY',
+  REMEMBERING = 'REMEMBERING',
+  AWAKENING = 'AWAKENING'
 }
 
 export enum FragmentType {
@@ -24,6 +26,7 @@ export interface Fragment {
   createdAt: number;
   isUser: boolean;
   position: [number, number, number]; // 3D coordinates
+  galaxyIndex: number;
 }
 
 export interface AIAnalysis {

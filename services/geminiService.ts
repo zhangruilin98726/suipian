@@ -2,7 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Sentiment, AIAnalysis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Always use named parameter for apiKey and use process.env.API_KEY directly
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeFragment = async (text: string): Promise<AIAnalysis> => {
   try {
@@ -10,8 +11,17 @@ export const analyzeFragment = async (text: string): Promise<AIAnalysis> => {
       model: "gemini-3-flash-preview",
       contents: `你是一个深邃、富有同情心的星河引路人。请分析以下这段情绪文字，并以JSON格式返回。你的回复应当充满文学感和治愈感，像是一首短诗的一角。
 
+      情绪类别指南：
+      - HAPPY: 喜悦、成功、希望
+      - CALM: 平静、释然、冥想
+      - ANXIOUS: 焦虑、迷茫、急躁
+      - SAD: 悲伤、失落、孤独
+      - ANGRY: 愤怒、不平、爆发
+      - REMEMBERING: 思念、追忆、怀念已故或远方的亲人（带有永恒、温柔、跨越时空的感觉）
+      - AWAKENING: 觉醒、启发、顿悟、看到曙光（一种理性的清澈感或长夜后的第一抹希望）
+
       JSON 结构：
-      1. sentiment: 情绪类别 (HAPPY, CALM, ANXIOUS, SAD, ANGRY 之一)
+      1. sentiment: 情绪类别 (上述7种之一)
       2. intensity: 情绪强度 (1-10)
       3. reply: 一句富有诗意、深度的共情回复 (25字以内，具有文学美感)
       4. tags: 3个富有质感的标签 (如 #余震, #破晓, #深潜 等)
